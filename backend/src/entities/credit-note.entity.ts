@@ -72,7 +72,7 @@ export class CreditNote {
   @Column({ type: 'varchar', length: 255, nullable: true })
   currentHash: string;
 
-  @Column({ type: 'enum', enum: CreditNoteStatus, default: CreditNoteStatus.DRAFT })
+  @Column({ type: 'varchar', length: 20, default: CreditNoteStatus.DRAFT })
   status: CreditNoteStatus;
 
   @Column({ type: 'boolean', default: false })

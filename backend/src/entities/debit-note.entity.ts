@@ -72,7 +72,7 @@ export class DebitNote {
   @Column({ type: 'varchar', length: 255, nullable: true })
   currentHash: string;
 
-  @Column({ type: 'enum', enum: DebitNoteStatus, default: DebitNoteStatus.DRAFT })
+  @Column({ type: 'varchar', length: 20, default: DebitNoteStatus.DRAFT })
   status: DebitNoteStatus;
 
   @Column({ type: 'boolean', default: false })

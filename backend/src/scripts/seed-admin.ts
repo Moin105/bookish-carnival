@@ -2,7 +2,7 @@ import { DataSource } from 'typeorm';
 import { config } from 'dotenv';
 import * as path from 'path';
 import { User } from '../entities/user.entity';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 // Load environment variables
 config({ path: path.join(__dirname, '../../.env') });
@@ -58,8 +58,8 @@ async function seedAdmin() {
     }
 
     // Create admin user
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash('admin123', salt);
+    const salt = bcrypt.genSaltSync(10);
+    const hashedPassword = bcrypt.hashSync('admin123', salt);
 
     const admin = userRepository.create({
       email: 'admin@zatca.com',

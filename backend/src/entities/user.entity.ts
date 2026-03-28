@@ -7,7 +7,7 @@ import {
   BeforeInsert,
   BeforeUpdate,
 } from 'typeorm';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 @Entity('users')
 export class User {
@@ -26,7 +26,7 @@ export class User {
   @Column({ type: 'varchar', length: 50, nullable: true })
   phone: string;
 
-  @Column({ type: 'enum', enum: ['admin', 'user'], default: 'user' })
+  @Column({ type: 'varchar', length: 20, default: 'user' })
   role: 'admin' | 'user';
 
   @Column({ type: 'boolean', default: true })
@@ -43,15 +43,14 @@ export class User {
 
   @BeforeInsert()
   @BeforeUpdate()
-  async hashPassword() {
+  hashPassword() {
     if (this.password && !this.password.startsWith('$2')) {
-      // Only hash if it's not already hashed
-      const salt = await bcrypt.genSalt(10);
-      this.password = await bcrypt.hash(this.password, salt);
+      const salt = bcrypt.genSaltSync(10);
+      this.password = bcrypt.hashSync(this.password, salt);
     }
   }
 
   async comparePassword(plainPassword: string): Promise<boolean> {
-    return await bcrypt.compare(plainPassword, this.password);
+    return bcrypt.compareSync(plainPassword, this.password);
   }
 }

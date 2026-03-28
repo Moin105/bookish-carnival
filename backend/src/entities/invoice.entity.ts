@@ -72,7 +72,7 @@ export class Invoice {
   @Column({ type: 'varchar', length: 255, nullable: true })
   currentHash: string;
 
-  @Column({ type: 'enum', enum: InvoiceStatus, default: InvoiceStatus.DRAFT })
+  @Column({ type: 'varchar', length: 20, default: InvoiceStatus.DRAFT })
   status: InvoiceStatus;
 
   @Column({ type: 'boolean', default: false })

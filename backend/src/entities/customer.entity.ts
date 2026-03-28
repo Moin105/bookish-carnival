@@ -47,7 +47,8 @@ export class Customer {
   @Column({ type: 'varchar', length: 100, nullable: true })
   email: string;
 
-  @Column({ type: 'enum', enum: ['B2B', 'B2C'], default: 'B2C' })
+  /** sql.js/SQLite: use varchar instead of enum (TypeORM enum not supported on sqljs). */
+  @Column({ type: 'varchar', length: 10, default: 'B2C' })
   type: 'B2B' | 'B2C';
 
   @Column({ type: 'boolean', default: true })

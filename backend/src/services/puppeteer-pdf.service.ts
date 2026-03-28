@@ -34,8 +34,9 @@ export class PuppeteerPdfService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly configService: ConfigService) {}
 
   async onModuleInit() {
-    // Lazily launched on first use if needed.
-    if (this.configService.get<string>('PDF_PUPPETEER_LAUNCH_ON_BOOT', 'true') === 'true') {
+    // Default off: launching Chromium on boot blocks Nest until ready (breaks Electron /health).
+    // First PDF request still calls ensureBrowser() (lazy).
+    if (this.configService.get<string>('PDF_PUPPETEER_LAUNCH_ON_BOOT', 'false') === 'true') {
       await this.ensureBrowser();
     }
   }

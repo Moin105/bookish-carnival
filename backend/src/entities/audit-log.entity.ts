@@ -25,7 +25,7 @@ export class AuditLog {
   @Column({ type: 'uuid', nullable: true })
   entityId: string;
 
-  @Column({ type: 'enum', enum: AuditAction })
+  @Column({ type: 'varchar', length: 32 })
   action: AuditAction;
 
   @Column({ type: 'text', nullable: true })

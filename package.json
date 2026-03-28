@@ -1,7 +1,8 @@
 {
   "name": "zatca-einvoicing",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "ZATCA Phase 1 E-Invoicing System",
+  "author": "ZATCA E-Invoicing",
   "private": true,
   "main": "electron/main.js",
   "workspaces": [
@@ -16,9 +17,10 @@
     "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "electron:download-node": "node scripts/download-node-runtime.mjs",
     "electron:prepare": "node scripts/prepare-electron-pack.mjs",
+    "electron:clean": "node scripts/clean-electron-dist.mjs",
     "electron:dev": "cross-env ELECTRON_DEV=1 electron .",
-    "electron:pack": "npm run electron:prepare && npm run electron:download-node && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
-    "electron:pack:dir": "npm run electron:prepare && npm run electron:download-node && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win dir"
+    "electron:pack": "npm run electron:clean && npm run electron:prepare && npm run electron:download-node && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
+    "electron:pack:dir": "npm run electron:clean && npm run electron:prepare && npm run electron:download-node && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win dir"
   },
   "build": {
     "appId": "com.zatca.einvoicing",

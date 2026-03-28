@@ -47,9 +47,13 @@ async function bootstrap() {
     }),
   );
 
-  const port = process.env.PORT || 3001;
-  await app.listen(port);
-  console.log(`🚀 Backend server running on http://localhost:${port}`);
+  const port = Number(process.env.PORT) || 3001;
+  // Bind to loopback so Electron health checks to 127.0.0.1 always reach this server on Windows.
+  await app.listen(port, '127.0.0.1');
+  console.log(`🚀 Backend server running on http://127.0.0.1:${port}`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('Bootstrap failed:', err);
+  process.exit(1);
+});

@@ -79,16 +79,28 @@ function loadExtraEnv() {
   return out;
 }
 
-function waitForHttp(url, timeoutMs = 120000) {
+function waitForHttp(url, timeoutMs = 180000) {
   const started = Date.now();
   return new Promise((resolve, reject) => {
+    let done = false;
     const tryOnce = () => {
+      if (done) return;
       const req = http.get(url, (res) => {
         res.resume();
-        resolve();
+        if (!done) {
+          done = true;
+          resolve();
+        }
       });
       req.on('error', () => {
+        if (done) return;
         if (Date.now() - started > timeoutMs) {
+          done = true;
+          try {
+            req.destroy();
+          } catch {
+            /* ignore */
+          }
           reject(new Error(`Timed out waiting for ${url}`));
         } else {
           setTimeout(tryOnce, 400);
@@ -99,8 +111,27 @@ function waitForHttp(url, timeoutMs = 120000) {
   });
 }
 
+/** If child exits before health responds, fail immediately (log path for support). */
+function rejectIfProcessExits(proc, logLabel, logPath) {
+  return new Promise((_, reject) => {
+    proc.once('exit', (code, signal) => {
+      if (code === 0 || code === null) return;
+      const hint = logPath
+        ? `See log: ${logPath}`
+        : '';
+      reject(
+        new Error(
+          `${logLabel} exited (code ${code}${signal ? `, signal ${signal}` : ''}). ${hint}`.trim(),
+        ),
+      );
+    });
+  });
+}
+
 function spawnBackend(nodeBin, backendDir, extraEnv) {
   const puppeteerCache = path.join(app.getPath('userData'), 'puppeteer-cache');
+  const sqlitePath = path.join(app.getPath('userData'), 'zatca.db');
+
   const env = {
     ...process.env,
     NODE_ENV: 'production',
@@ -109,26 +140,58 @@ function spawnBackend(nodeBin, backendDir, extraEnv) {
     PUPPETEER_CACHE_DIR: puppeteerCache,
   };
 
+  // User %APPDATA%\zatca-einvoicing\.env merged here — can override PORT / DB_* from dev machine.
+  Object.assign(env, extraEnv);
+
   if (app.isPackaged) {
-    const sqlitePath = path.join(app.getPath('userData'), 'zatca.db');
     fs.mkdirSync(path.dirname(sqlitePath), { recursive: true });
+    // Force desktop SQLite + correct port (must win over any .env left from Postgres dev).
+    env.PORT = String(BACKEND_PORT);
     env.DB_TYPE = 'sqlite';
     env.SQLITE_PATH = sqlitePath;
+    env.PDF_PUPPETEER_LAUNCH_ON_BOOT = 'false';
+    for (const k of [
+      'DATABASE_URL',
+      'DB_HOST',
+      'DB_PORT',
+      'DB_USERNAME',
+      'DB_PASSWORD',
+      'DB_DATABASE',
+      'DB_SSL',
+    ]) {
+      delete env[k];
+    }
   }
-
-  Object.assign(env, extraEnv);
 
   const mainJs = path.join(backendDir, 'dist', 'main.js');
   if (!fs.existsSync(mainJs)) {
     throw new Error(`Backend not found at ${mainJs}. Run the full Electron build.`);
   }
 
-  return spawn(nodeBin, [mainJs], {
+  const logDir = app.getPath('userData');
+  fs.mkdirSync(logDir, { recursive: true });
+  const useLogs = app.isPackaged;
+
+  const child = spawn(nodeBin, [mainJs], {
     cwd: backendDir,
     env,
-    stdio: 'inherit',
+    // Windows: must use 'pipe' then stream to file — WriteStream is not valid for stdio here.
+    stdio: useLogs ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     shell: false,
+    windowsHide: true,
   });
+
+  if (useLogs) {
+    const logPath = path.join(logDir, 'backend.log');
+    const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+    logStream.write(
+      `\n--- ${new Date().toISOString()} spawn backend cwd=${backendDir} PORT=${env.PORT} DB_TYPE=${env.DB_TYPE} ---\n`,
+    );
+    child.stdout.pipe(logStream, { end: false });
+    child.stderr.pipe(logStream, { end: false });
+  }
+
+  return child;
 }
 
 function spawnFrontend(nodeBin, frontendDir) {
@@ -144,12 +207,31 @@ function spawnFrontend(nodeBin, frontendDir) {
     PORT: FRONTEND_PORT,
     HOSTNAME: '127.0.0.1',
   };
-  return spawn(nodeBin, [serverJs], {
+  if (app.isPackaged) {
+    env.PORT = String(FRONTEND_PORT);
+  }
+
+  const logDir = app.getPath('userData');
+  fs.mkdirSync(logDir, { recursive: true });
+  const useLogs = app.isPackaged;
+
+  const child = spawn(nodeBin, [serverJs], {
     cwd: frontendDir,
     env,
-    stdio: 'inherit',
+    stdio: useLogs ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     shell: false,
+    windowsHide: true,
   });
+
+  if (useLogs) {
+    const logPath = path.join(logDir, 'frontend.log');
+    const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+    logStream.write(`\n--- ${new Date().toISOString()} spawn frontend cwd=${frontendDir} ---\n`);
+    child.stdout.pipe(logStream, { end: false });
+    child.stderr.pipe(logStream, { end: false });
+  }
+
+  return child;
 }
 
 function killChild(proc, label) {
@@ -178,6 +260,9 @@ async function createWindow() {
     const backendDir = getBackendDir();
     const frontendDir = getFrontendStandaloneDir();
 
+    const userData = app.getPath('userData');
+    const backendLogPath = path.join(userData, 'backend.log');
+
     backendProcess = spawnBackend(nodeBin, backendDir, extraEnv);
     backendProcess.on('exit', (code) => {
       if (code !== 0 && code !== null) {
@@ -185,7 +270,10 @@ async function createWindow() {
       }
     });
 
-    await waitForHttp(`http://127.0.0.1:${BACKEND_PORT}/health`, 120000);
+    await Promise.race([
+      waitForHttp(`http://127.0.0.1:${BACKEND_PORT}/health`, 180000),
+      rejectIfProcessExits(backendProcess, 'Backend API', backendLogPath),
+    ]);
 
     frontendProcess = spawnFrontend(nodeBin, frontendDir);
     frontendProcess.on('exit', (code) => {
@@ -194,7 +282,14 @@ async function createWindow() {
       }
     });
 
-    await waitForHttp(FRONTEND_URL, 120000);
+    await Promise.race([
+      waitForHttp(FRONTEND_URL, 180000),
+      rejectIfProcessExits(
+        frontendProcess,
+        'Next.js server',
+        path.join(userData, 'frontend.log'),
+      ),
+    ]);
   }
 
   mainWindow = new BrowserWindow({
