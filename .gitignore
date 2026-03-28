@@ -9,8 +9,13 @@ coverage/
 # Production
 build/
 dist/
+dist-pack/
+dist-electron/
 .next/
 out/
+
+# Bundled Node runtime for Electron (download with npm run electron:download-node)
+electron/node-runtime/
 
 # Misc
 .DS_Store
@@ -42,6 +47,7 @@ Thumbs.db
 # Database
 *.sqlite
 *.db
+backend/data/
 
 # Storage
 storage/uploads/

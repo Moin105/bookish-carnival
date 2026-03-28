@@ -50,11 +50,11 @@ export class Invoice {
   orderNumber: string;
 
   // Immutable company snapshot kept for historical invoice integrity.
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'simple-json', nullable: true })
   companySnapshot: Record<string, any> | null;
 
   // Immutable customer snapshot kept for historical invoice integrity.
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'simple-json', nullable: true })
   customerSnapshot: Record<string, any> | null;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })

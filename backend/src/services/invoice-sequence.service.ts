@@ -1,10 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, EntityManager, SelectQueryBuilder } from 'typeorm';
 import { InvoiceSequence } from '../entities/invoice-sequence.entity';
 import { Invoice } from '../entities/invoice.entity';
 import { CreditNote } from '../entities/credit-note.entity';
 import { DebitNote } from '../entities/debit-note.entity';
+
+function maxNumericSuffixFromStrings(values: Array<string | null | undefined>): number {
+  let max = 0;
+  for (const v of values) {
+    const digits = String(v ?? '').replace(/\D/g, '');
+    const n = parseInt(digits || '0', 10);
+    if (!Number.isNaN(n) && n > max) max = n;
+  }
+  return max;
+}
+
+function applySequenceLock(
+  qb: SelectQueryBuilder<InvoiceSequence>,
+  em: EntityManager,
+): SelectQueryBuilder<InvoiceSequence> {
+  const t = em.connection.driver.options.type;
+  if (t === 'sqljs') {
+    return qb;
+  }
+  return qb.setLock('pessimistic_write');
+}
 
 @Injectable()
 export class InvoiceSequenceService {
@@ -14,42 +35,68 @@ export class InvoiceSequenceService {
     private dataSource: DataSource,
   ) {}
 
+  private async maxInvoiceNumericSuffix(
+    em: EntityManager,
+    companyId: string,
+  ): Promise<number> {
+    const rows = await em
+      .getRepository(Invoice)
+      .createQueryBuilder('i')
+      .select('i.invoiceNumber', 'invoiceNumber')
+      .where('i.companyId = :companyId', { companyId })
+      .getRawMany<{ invoiceNumber: string }>();
+    return maxNumericSuffixFromStrings(rows.map((r) => r.invoiceNumber));
+  }
+
+  private async maxCreditNoteNumericSuffix(
+    em: EntityManager,
+    companyId: string,
+  ): Promise<number> {
+    const rows = await em
+      .getRepository(CreditNote)
+      .createQueryBuilder('n')
+      .select('n.noteNumber', 'noteNumber')
+      .where('n.companyId = :companyId', { companyId })
+      .getRawMany<{ noteNumber: string }>();
+    return maxNumericSuffixFromStrings(rows.map((r) => r.noteNumber));
+  }
+
+  private async maxDebitNoteNumericSuffix(
+    em: EntityManager,
+    companyId: string,
+  ): Promise<number> {
+    const rows = await em
+      .getRepository(DebitNote)
+      .createQueryBuilder('n')
+      .select('n.noteNumber', 'noteNumber')
+      .where('n.companyId = :companyId', { companyId })
+      .getRawMany<{ noteNumber: string }>();
+    return maxNumericSuffixFromStrings(rows.map((r) => r.noteNumber));
+  }
+
   /**
    * Get next invoice number for company (e.g. INV-1, INV-2). Thread-safe via transaction.
    */
   async getNextInvoiceNumber(companyId: string): Promise<string> {
     return this.dataSource.transaction(async (em) => {
-      // Lock the sequence row (if it exists) to prevent concurrent increments.
-      let seq = await em
-        .getRepository(InvoiceSequence)
-        .createQueryBuilder('s')
-        .where('s.companyId = :companyId', { companyId })
-        .setLock('pessimistic_write')
-        .getOne();
+      let seq = await applySequenceLock(
+        em.getRepository(InvoiceSequence).createQueryBuilder('s').where('s.companyId = :companyId', {
+          companyId,
+        }),
+        em,
+      ).getOne();
 
-      const maxExistingInvoiceNumberRow = await em
-        .getRepository(Invoice)
-        .createQueryBuilder('i')
-        .select(
-          `COALESCE(MAX(NULLIF(regexp_replace(i.invoiceNumber, '[^0-9]', '', 'g'), '')::int), 0)`,
-          'max',
-        )
-        .where('i.companyId = :companyId', { companyId })
-        .getRawOne();
-
-      const maxExistingInvoiceNumber = Number((maxExistingInvoiceNumberRow as any)?.max ?? 0);
+      const maxExistingInvoiceNumber = await this.maxInvoiceNumericSuffix(em, companyId);
 
       if (!seq) {
         seq = em.create(InvoiceSequence, {
           companyId,
-          // Initialize from existing invoices so we don't reuse INV-* after a reset.
           lastInvoiceNumber: maxExistingInvoiceNumber,
           lastCreditNoteNumber: 0,
           lastDebitNoteNumber: 0,
         });
         await em.save(seq);
       } else if ((seq.lastInvoiceNumber || 0) < maxExistingInvoiceNumber) {
-        // If the stored sequence is behind what exists in the invoices table, bump it.
         seq.lastInvoiceNumber = maxExistingInvoiceNumber;
       }
 
@@ -64,33 +111,19 @@ export class InvoiceSequenceService {
    */
   async getNextCreditNoteNumber(companyId: string): Promise<string> {
     return this.dataSource.transaction(async (em) => {
-      // Lock the sequence row (if it exists) to prevent concurrent increments.
-      let seq = await em
-        .getRepository(InvoiceSequence)
-        .createQueryBuilder('s')
-        .where('s.companyId = :companyId', { companyId })
-        .setLock('pessimistic_write')
-        .getOne();
+      let seq = await applySequenceLock(
+        em.getRepository(InvoiceSequence).createQueryBuilder('s').where('s.companyId = :companyId', {
+          companyId,
+        }),
+        em,
+      ).getOne();
 
-      const maxExistingCreditNoteNumberRow = await em
-        .getRepository(CreditNote)
-        .createQueryBuilder('n')
-        .select(
-          `COALESCE(MAX(NULLIF(regexp_replace(n.noteNumber, '[^0-9]', '', 'g'), '')::int), 0)`,
-          'max',
-        )
-        .where('n.companyId = :companyId', { companyId })
-        .getRawOne();
-
-      const maxExistingCreditNoteNumber = Number(
-        (maxExistingCreditNoteNumberRow as any)?.max ?? 0,
-      );
+      const maxExistingCreditNoteNumber = await this.maxCreditNoteNumericSuffix(em, companyId);
 
       if (!seq) {
         seq = em.create(InvoiceSequence, {
           companyId,
           lastInvoiceNumber: 0,
-          // Initialize from existing credit notes so we don't reuse CN-* after a reset.
           lastCreditNoteNumber: maxExistingCreditNoteNumber,
           lastDebitNoteNumber: 0,
         });
@@ -110,32 +143,20 @@ export class InvoiceSequenceService {
    */
   async getNextDebitNoteNumber(companyId: string): Promise<string> {
     return this.dataSource.transaction(async (em) => {
-      // Lock the sequence row (if it exists) to prevent concurrent increments.
-      let seq = await em
-        .getRepository(InvoiceSequence)
-        .createQueryBuilder('s')
-        .where('s.companyId = :companyId', { companyId })
-        .setLock('pessimistic_write')
-        .getOne();
+      let seq = await applySequenceLock(
+        em.getRepository(InvoiceSequence).createQueryBuilder('s').where('s.companyId = :companyId', {
+          companyId,
+        }),
+        em,
+      ).getOne();
 
-      const maxExistingDebitNoteNumberRow = await em
-        .getRepository(DebitNote)
-        .createQueryBuilder('n')
-        .select(
-          `COALESCE(MAX(NULLIF(regexp_replace(n.noteNumber, '[^0-9]', '', 'g'), '')::int), 0)`,
-          'max',
-        )
-        .where('n.companyId = :companyId', { companyId })
-        .getRawOne();
-
-      const maxExistingDebitNoteNumber = Number((maxExistingDebitNoteNumberRow as any)?.max ?? 0);
+      const maxExistingDebitNoteNumber = await this.maxDebitNoteNumericSuffix(em, companyId);
 
       if (!seq) {
         seq = em.create(InvoiceSequence, {
           companyId,
           lastInvoiceNumber: 0,
           lastCreditNoteNumber: 0,
-          // Initialize from existing debit notes so we don't reuse DN-* after a reset.
           lastDebitNoteNumber: maxExistingDebitNoteNumber,
         });
         await em.save(seq);

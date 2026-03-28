@@ -10,6 +10,7 @@ try {
 
 const nextConfig = {
   reactStrictMode: true,
+  output: 'standalone',
   env: {
     NEXT_PUBLIC_API_URL: apiUrl,
   },
@@ -43,7 +44,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: https:",
               "font-src 'self' data:",
-              `connect-src 'self' ${apiOrigin} http://localhost:3001`,
+              `connect-src 'self' ${apiOrigin} http://localhost:3001 http://127.0.0.1:3001`,
               "frame-ancestors 'none'",
             ].join('; '),
           },

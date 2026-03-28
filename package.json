@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "ZATCA Phase 1 E-Invoicing System",
   "private": true,
+  "main": "electron/main.js",
   "workspaces": [
     "backend",
     "frontend"
@@ -12,6 +13,59 @@
     "dev:frontend": "cd frontend && npm run dev",
     "build:backend": "cd backend && npm run build",
     "build:frontend": "cd frontend && npm run build",
-    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install"
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "electron:download-node": "node scripts/download-node-runtime.mjs",
+    "electron:prepare": "node scripts/prepare-electron-pack.mjs",
+    "electron:dev": "cross-env ELECTRON_DEV=1 electron .",
+    "electron:pack": "npm run electron:prepare && npm run electron:download-node && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win",
+    "electron:pack:dir": "npm run electron:prepare && npm run electron:download-node && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win dir"
+  },
+  "build": {
+    "appId": "com.zatca.einvoicing",
+    "productName": "ZATCA E-Invoicing",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/main.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist-pack/backend",
+        "to": "backend"
+      },
+      {
+        "from": "dist-pack/frontend",
+        "to": "frontend"
+      },
+      {
+        "from": "electron/node-runtime",
+        "to": "node",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^31.7.7",
+    "electron-builder": "^25.1.8"
   }
 }
